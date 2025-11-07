@@ -1,0 +1,413 @@
+name: CI Test
+
+# Simplified CI pipeline for testing job dependencies and conditions
+# This is a test version that only uses echo statements
+
+on:
+    push:
+        branches:
+            - "**"
+    workflow_dispatch:
+        inputs:
+            environment:
+                description: "Target environment"
+                required: false
+                default: "auto"
+                type: choice
+                options:
+                    - auto
+                    - nonlive
+                    - live
+            workspace:
+                description: "Terraform workspace"
+                required: false
+                type: string
+
+env:
+    SERVICE_NAME: ${{ github.event.repository.name }}
+    AWS_REGION: eu-central-1
+
+permissions:
+    contents: read
+    id-token: write
+
+jobs:
+    detect-changes:
+        name: Detect Change Types
+        runs-on: ubuntu-latest
+        if: github.actor != 'dependabot[bot]'
+        outputs:
+            has_infrastructure_changes: ${{ steps.detect.outputs.has_infrastructure_changes }}
+            has_code_changes: ${{ steps.detect.outputs.has_code_changes }}
+            has_lambda_deployment_bucket_changes: ${{ steps.detect.outputs.has_lambda_deployment_bucket_changes }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Mock Detect Changes
+              id: detect
+              run: |
+                  echo "=== Mock Change Detection ==="
+                  # Simulate change detection based on branch or random
+                  if [[ "${{ github.ref_name }}" == "develop" ]] || [[ "${{ github.ref_name }}" == "main" ]]; then
+                      echo "has_infrastructure_changes=true" >> $GITHUB_OUTPUT
+                      echo "has_code_changes=true" >> $GITHUB_OUTPUT
+                      echo "has_lambda_deployment_bucket_changes=false" >> $GITHUB_OUTPUT
+                      echo "✅ Simulated changes detected for main branches"
+                  else
+                      echo "has_infrastructure_changes=false" >> $GITHUB_OUTPUT
+                      echo "has_code_changes=true" >> $GITHUB_OUTPUT
+                      echo "has_lambda_deployment_bucket_changes=false" >> $GITHUB_OUTPUT
+                      echo "✅ Simulated code changes only for feature branch"
+                  fi
+
+    determine-environment:
+        name: Determine Environment & Workspace
+        runs-on: ubuntu-latest
+        outputs:
+            environment: ${{ steps.determine.outputs.environment }}
+            workspace: ${{ steps.determine.outputs.workspace }}
+            should_deploy: ${{ steps.determine.outputs.should_deploy }}
+        steps:
+            - name: Mock Environment Determination
+              id: determine
+              run: |
+                  echo "=== Mock Environment Determination ==="
+                  
+                  # Simulate environment logic
+                  if [[ "${{ github.ref_name }}" == "main" ]]; then
+                      ENVIRONMENT="live"
+                      WORKSPACE="default"
+                      SHOULD_DEPLOY="true"
+                  elif [[ "${{ github.ref_name }}" == "develop" ]]; then
+                      ENVIRONMENT="nonlive"
+                      WORKSPACE="develop"
+                      SHOULD_DEPLOY="true"
+                  else
+                      ENVIRONMENT="nonlive"
+                      WORKSPACE="${{ github.ref_name }}"
+                      SHOULD_DEPLOY="true"
+                  fi
+                  
+                  echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+                  echo "workspace=$WORKSPACE" >> $GITHUB_OUTPUT
+                  echo "should_deploy=$SHOULD_DEPLOY" >> $GITHUB_OUTPUT
+                  
+                  echo "Environment: $ENVIRONMENT"
+                  echo "Workspace: $WORKSPACE"
+                  echo "Should Deploy: $SHOULD_DEPLOY"
+
+    set-vars:
+        name: Set Common Variables
+        runs-on: ubuntu-latest
+        needs: determine-environment
+        outputs:
+            MAIN_TG_MODULE_NAME: ${{ steps.setvar.outputs.MAIN_TG_MODULE_NAME }}
+            S3_BUCKET_NAME: ${{ steps.setvar.outputs.S3_BUCKET_NAME }}
+        steps:
+            - name: Mock Set Common Variables
+              id: setvar
+              run: |
+                  echo "=== Mock Set Variables ==="
+                  MAIN_TG_MODULE_NAME="test-module"
+                  S3_BUCKET_NAME="test-bucket-${{ needs.determine-environment.outputs.workspace }}"
+                  
+                  echo "MAIN_TG_MODULE_NAME=$MAIN_TG_MODULE_NAME" >> $GITHUB_OUTPUT
+                  echo "S3_BUCKET_NAME=$S3_BUCKET_NAME" >> $GITHUB_OUTPUT
+                  
+                  echo "Module Name: $MAIN_TG_MODULE_NAME"
+                  echo "S3 Bucket: $S3_BUCKET_NAME"
+
+    check-infrastructure:
+        name: Check if Infrastructure Exists
+        runs-on: ubuntu-latest
+        needs: [detect-changes, determine-environment, set-vars]
+        if: github.actor != 'dependabot[bot]'
+        outputs:
+            infrastructure_exists: ${{ steps.check.outputs.infrastructure_exists }}
+        steps:
+            - name: Mock Infrastructure Check
+              id: check
+              run: |
+                  echo "=== Mock Infrastructure Check ==="
+                  # Simulate infrastructure existence based on environment
+                  if [[ "${{ needs.determine-environment.outputs.environment }}" == "live" ]]; then
+                      INFRASTRUCTURE_EXISTS="true"
+                  else
+                      INFRASTRUCTURE_EXISTS="false"
+                  fi
+                  
+                  echo "infrastructure_exists=$INFRASTRUCTURE_EXISTS" >> $GITHUB_OUTPUT
+                  echo "Infrastructure exists: $INFRASTRUCTURE_EXISTS"
+
+    deploy-s3-bucket:
+        name: Deploy S3 Bucket Infrastructure
+        runs-on: ubuntu-latest
+        needs: [detect-changes, determine-environment, check-infrastructure, set-vars]
+        if: |
+            always() &&
+            github.actor != 'dependabot[bot]' &&
+            needs.determine-environment.outputs.should_deploy == 'true' &&
+            (
+                needs.check-infrastructure.outputs.infrastructure_exists == 'false' ||
+                needs.detect-changes.outputs.has_lambda_deployment_bucket_changes == 'true'
+            )
+        steps:
+            - name: Mock Deploy S3 Bucket
+              run: |
+                  echo "=== Mock S3 Bucket Deployment ==="
+                  echo "Environment: ${{ needs.determine-environment.outputs.environment }}"
+                  echo "Workspace: ${{ needs.determine-environment.outputs.workspace }}"
+                  echo "Bucket: ${{ needs.set-vars.outputs.S3_BUCKET_NAME }}"
+                  echo "✅ S3 bucket deployment simulated"
+
+    build-and-upload-lambda:
+        name: Build Lambda & Upload to S3
+        runs-on: ubuntu-latest
+        needs: [detect-changes, determine-environment, set-vars, deploy-s3-bucket, check-infrastructure]
+        outputs:
+            s3_key: ${{ steps.upload.outputs.s3_key }}
+            s3_version: ${{ steps.upload.outputs.s3_version }}
+            artifact_name: ${{ steps.build.outputs.artifact_name }}
+        if: |
+            (github.actor == 'dependabot[bot]') ||
+            (github.actor != 'dependabot[bot]' &&
+            needs.determine-environment.outputs.should_deploy == 'true' &&
+            (needs.detect-changes.outputs.has_code_changes == 'true' ||
+             needs.check-infrastructure.outputs.infrastructure_exists == 'false') &&
+            (needs.deploy-s3-bucket.result == 'success' || needs.deploy-s3-bucket.result == 'skipped' ||
+             (needs.check-infrastructure.outputs.infrastructure_exists == 'true' &&
+              needs.detect-changes.outputs.has_lambda_deployment_bucket_changes == 'false')))
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Mock Unit Tests
+              if: |
+                  (github.actor == 'dependabot[bot]') ||
+                  (github.actor != 'dependabot[bot]' &&
+                   needs.determine-environment.outputs.environment != 'live' &&
+                   github.ref != 'refs/heads/main')
+              run: |
+                  echo "=== Mock Unit Tests ==="
+                  echo "✅ Unit tests simulated"
+
+            - name: Mock Build Lambda Package
+              id: build
+              if: github.actor != 'dependabot[bot]'
+              run: |
+                  echo "=== Mock Lambda Build ==="
+                  echo "artifact_name=test-lambda.zip" >> $GITHUB_OUTPUT
+                  echo "✅ Lambda build simulated"
+
+            - name: Mock Upload Lambda to S3
+              id: upload
+              if: github.actor != 'dependabot[bot]'
+              run: |
+                  echo "=== Mock S3 Upload ==="
+                  echo "s3_key=lambda/test-module.zip" >> $GITHUB_OUTPUT
+                  echo "s3_version=mock-version-123" >> $GITHUB_OUTPUT
+                  echo "✅ S3 upload simulated"
+
+    ensure-infrastructure:
+        name: Ensure Infrastructure Exists
+        runs-on: ubuntu-latest
+        needs: [detect-changes, determine-environment, check-infrastructure, set-vars, deploy-s3-bucket, build-and-upload-lambda]
+        if: |
+            always() &&
+            github.actor != 'dependabot[bot]' &&
+            needs.determine-environment.outputs.should_deploy == 'true' &&
+            (needs.check-infrastructure.outputs.infrastructure_exists == 'false' ||
+             needs.detect-changes.outputs.has_infrastructure_changes == 'true') &&
+            needs.build-and-upload-lambda.result == 'success'
+        steps:
+            - name: Mock Ensure Infrastructure
+              run: |
+                  echo "=== Mock Infrastructure Deployment ==="
+                  echo "Module: ${{ needs.set-vars.outputs.MAIN_TG_MODULE_NAME }}"
+                  echo "S3 Key: ${{ needs.build-and-upload-lambda.outputs.s3_key }}"
+                  echo "S3 Version: ${{ needs.build-and-upload-lambda.outputs.s3_version }}"
+                  echo "✅ Infrastructure deployment simulated"
+
+    deploy-lambda:
+        name: Deploy Lambda Functions
+        runs-on: ubuntu-latest
+        needs: [detect-changes, determine-environment, check-infrastructure, deploy-s3-bucket, build-and-upload-lambda, ensure-infrastructure, set-vars]
+        outputs:
+            updated_functions: ${{ steps.deploy.outputs.updated_functions }}
+        if: |
+            always() &&
+            github.actor != 'dependabot[bot]' &&
+            needs.build-and-upload-lambda.result == 'success' &&
+            needs.detect-changes.outputs.has_code_changes == 'true' &&
+            (needs.ensure-infrastructure.result == 'success' || 
+            needs.ensure-infrastructure.result == 'skipped' ||
+            (needs.check-infrastructure.outputs.infrastructure_exists == 'true' && 
+             needs.build-and-upload-lambda.result == 'success'))
+        steps:
+            - name: Mock Deploy Lambda Functions
+              id: deploy
+              run: |
+                  echo "=== Mock Lambda Deployment ==="
+                  echo "Environment: ${{ needs.determine-environment.outputs.environment }}"
+                  echo "Workspace: ${{ needs.determine-environment.outputs.workspace }}"
+                  echo "S3 Key: ${{ needs.build-and-upload-lambda.outputs.s3_key }}"
+                  echo "S3 Version: ${{ needs.build-and-upload-lambda.outputs.s3_version }}"
+                  
+                  MOCK_FUNCTIONS="test-function-1,test-function-2,test-function-3"
+                  echo "updated_functions=$MOCK_FUNCTIONS" >> $GITHUB_OUTPUT
+                  echo "✅ Lambda functions updated: $MOCK_FUNCTIONS"
+
+    e2e-tests:
+        name: E2E Tests
+        runs-on: ubuntu-latest
+        needs: [deploy-lambda, deploy-s3-bucket, build-and-upload-lambda, ensure-infrastructure, determine-environment, set-vars]
+        if: |
+            always() &&
+            github.ref != 'refs/heads/develop' && github.ref != 'refs/heads/main' && github.actor != 'dependabot[bot]' &&
+            needs.determine-environment.outputs.should_deploy == 'true' &&
+            (needs.deploy-lambda.result == 'success' || needs.ensure-infrastructure.result == 'success' || needs.deploy-s3-bucket.result == 'success')
+        steps:
+            - name: Mock E2E Tests
+              run: |
+                  echo "=== Mock E2E Tests ==="
+                  echo "Environment: ${{ needs.determine-environment.outputs.environment }}"
+                  echo "Workspace: ${{ needs.determine-environment.outputs.workspace }}"
+                  echo "✅ E2E tests simulated"
+
+    ci-status:
+        name: CI Status & Deployment Summary
+        runs-on: ubuntu-latest
+        needs: [detect-changes, determine-environment, check-infrastructure, deploy-s3-bucket, build-and-upload-lambda, ensure-infrastructure, deploy-lambda, e2e-tests]
+        if: always()
+        steps:
+            - name: CI Pipeline Status & Deployment Summary
+              run: |
+                  echo "=== CI Pipeline Summary ==="
+                  echo "Branch: $GITHUB_REF_NAME"
+                  echo "Environment: ${{ needs.determine-environment.outputs.environment }}"
+                  echo "Workspace: ${{ needs.determine-environment.outputs.workspace }}"
+                  echo "Actor: $GITHUB_ACTOR"
+                  echo ""
+
+                  # Special handling for dependabot
+                  if [[ "$GITHUB_ACTOR" == "dependabot[bot]" ]]; then
+                      echo "=== Dependabot Pipeline ==="
+                      if [[ "${{ needs.build-and-upload-lambda.result }}" == "success" ]]; then
+                          echo "✅ Tests and build completed successfully"
+                      else
+                          echo "❌ Tests or build failed"
+                      fi
+                      exit 0
+                  fi
+
+                  # Deployment summary
+                  if [[ "${{ needs.determine-environment.outputs.should_deploy }}" == "true" ]]; then
+                      echo "=== Deployment Summary ==="
+                      
+                      # Change detection
+                      echo "Changes detected:"
+                      echo "  - Infrastructure: ${{ needs.detect-changes.outputs.has_infrastructure_changes }}"
+                      echo "  - Code: ${{ needs.detect-changes.outputs.has_code_changes }}"
+                      echo ""
+
+                      # Job results
+                      echo "Job Results:"
+                      echo "  - detect-changes: ${{ needs.detect-changes.result }}"
+                      echo "  - determine-environment: ${{ needs.determine-environment.result }}"
+                      echo "  - check-infrastructure: ${{ needs.check-infrastructure.result }}"
+                      echo "  - deploy-s3-bucket: ${{ needs.deploy-s3-bucket.result }}"
+                      echo "  - build-and-upload-lambda: ${{ needs.build-and-upload-lambda.result }}"
+                      echo "  - ensure-infrastructure: ${{ needs.ensure-infrastructure.result }}"
+                      echo "  - deploy-lambda: ${{ needs.deploy-lambda.result }}"
+                      echo "  - e2e-tests: ${{ needs.e2e-tests.result }}"
+
+                      # Lambda functions deployment
+                      if [[ "${{ needs.deploy-lambda.result }}" == "success" ]]; then
+                          UPDATED_FUNCTIONS="${{ needs.deploy-lambda.outputs.updated_functions }}"
+                          if [[ -n "$UPDATED_FUNCTIONS" ]]; then
+                              echo "✅ Lambda functions updated: $UPDATED_FUNCTIONS"
+                          else
+                              echo "✅ Lambda functions updated successfully"
+                          fi
+                      elif [[ "${{ needs.deploy-lambda.result }}" == "skipped" ]]; then
+                          echo "⏭️  Lambda deployment skipped (no code changes)"
+                      fi
+
+                      # E2E Tests
+                      if [[ "${{ needs.e2e-tests.result }}" == "success" ]]; then
+                          echo "✅ E2E tests passed"
+                      elif [[ "${{ needs.e2e-tests.result }}" == "skipped" ]]; then
+                          echo "⏭️  E2E tests skipped"
+                      fi
+                  else
+                      echo "⏭️  Deployment skipped for this branch/environment"
+                  fi
+
+    promote-to-live:
+        name: Auto-promote to Live
+        runs-on: ubuntu-latest
+        needs: [ci-status]
+        if: github.ref == 'refs/heads/develop' && needs.ci-status.result == 'success'
+        steps:
+            - name: Debug promotion conditions
+              run: |
+                  echo "=== Promotion Debug Info ==="
+                  echo "Branch: ${{ github.ref }}"
+                  echo "Branch name: ${{ github.ref_name }}"
+                  echo "Is develop branch: ${{ github.ref == 'refs/heads/develop' }}"
+                  echo "ci-status result: ${{ needs.ci-status.result }}"
+                  echo ""
+                  echo "Condition evaluation:"
+                  echo "  github.ref == 'refs/heads/develop': ${{ github.ref == 'refs/heads/develop' }}"
+                  echo "  needs.ci-status.result == 'success': ${{ needs.ci-status.result == 'success' }}"
+                  echo ""
+
+            - uses: actions/checkout@v4
+
+            - name: Mock Merge develop to main
+              run: |
+                  echo "=== Mock Auto-promotion ==="
+                  echo "Would merge develop → main"
+                  echo "✅ Auto-promotion simulated"
+
+    final-status:
+        name: Final Pipeline Status
+        runs-on: ubuntu-latest
+        needs: [ci-status, promote-to-live]
+        if: always() && github.ref == 'refs/heads/develop'
+        steps:
+            - name: Final Pipeline Summary
+              run: |
+                  echo "=== Final Pipeline Summary ==="
+                  echo "Branch: $GITHUB_REF_NAME"
+                  echo "Branch ref: $GITHUB_REF"
+                  echo ""
+
+                  echo "=== Job Results Debug ==="
+                  echo "ci-status: ${{ needs.ci-status.result }}"
+                  echo "promote-to-live: ${{ needs.promote-to-live.result }}"
+                  echo ""
+
+                  echo "=== Condition Evaluation ==="
+                  echo "always(): true"
+                  echo "github.ref: $GITHUB_REF"
+                  echo "github.ref == 'refs/heads/develop': ${{ github.ref == 'refs/heads/develop' }}"
+                  echo ""
+
+                  if [[ "${{ needs.ci-status.result }}" == "success" ]]; then
+                      echo "✅ CI Pipeline completed successfully"
+                  else
+                      echo "❌ CI Pipeline failed"
+                  fi
+
+                  if [[ "${{ needs.promote-to-live.result }}" == "success" ]]; then
+                      echo "✅ Auto-promotion to live completed successfully"
+                  elif [[ "${{ needs.promote-to-live.result }}" == "failure" ]]; then
+                      echo "❌ Auto-promotion to live failed"
+                  elif [[ "${{ needs.promote-to-live.result }}" == "skipped" ]]; then
+                      echo "⏭️  Auto-promotion to live skipped"
+                      echo "💡 Check promote-to-live job conditions:"
+                      echo "   - Branch must be 'develop'"
+                      echo "   - ci-status must be 'success'"
+                  else
+                      echo "❓ Auto-promotion status: ${{ needs.promote-to-live.result }}"
+                  fi
