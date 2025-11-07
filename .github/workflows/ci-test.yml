@@ -224,7 +224,7 @@ jobs:
               run: |
                   echo "=== Mock Lambda Build ==="
                   echo "artifact_name=test-lambda.zip" >> $GITHUB_OUTPUT
-                  echo "✅ Lambda build simulated"
+                  echo "✅ Lambda build"
 
             - name: Mock Upload Lambda to S3
               id: upload
