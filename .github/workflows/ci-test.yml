@@ -299,6 +299,8 @@ jobs:
                   MOCK_FUNCTIONS="test-function-1,test-function-2,test-function-3"
                   echo "updated_functions=$MOCK_FUNCTIONS" >> $GITHUB_OUTPUT
                   echo "✅ Lambda functions updated: $MOCK_FUNCTIONS"
+                  echo "test check fails"
+                  exit 1
 
     e2e-tests:
         name: E2E Tests
@@ -341,30 +343,6 @@ jobs:
             needs.deploy-lambda.result != 'failure' &&
             needs.e2e-tests.result != 'failure'
         steps:
-            - name: Debug promotion conditions
-              run: |
-                  echo "=== Promotion Debug Info ==="
-                  echo "Branch: ${{ github.ref }}"
-                  echo "Branch name: ${{ github.ref_name }}"
-                  echo "Is develop branch: ${{ github.ref == 'refs/heads/develop' }}"
-                  echo ""
-                  echo "=== Critical Jobs Status ==="
-                  echo "deploy-s3-bucket: ${{ needs.deploy-s3-bucket.result }}"
-                  echo "ensure-infrastructure: ${{ needs.ensure-infrastructure.result }}"
-                  echo "deploy-lambda: ${{ needs.deploy-lambda.result }}"
-                  echo "e2e-tests: ${{ needs.e2e-tests.result }}"
-                  echo ""
-                  echo "=== Condition Evaluation ==="
-                  echo "always(): true (always evaluates to true)"
-                  echo "github.ref == 'refs/heads/develop': ${{ github.ref == 'refs/heads/develop' }}"
-                  echo "deploy-s3-bucket success/skipped: ${{ needs.deploy-s3-bucket.result == 'success' || needs.deploy-s3-bucket.result == 'skipped' }}"
-                  echo "ensure-infrastructure success/skipped: ${{ needs.ensure-infrastructure.result == 'success' || needs.ensure-infrastructure.result == 'skipped' }}"
-                  echo "deploy-lambda success/skipped: ${{ needs.deploy-lambda.result == 'success' || needs.deploy-lambda.result == 'skipped' }}"
-                  echo "e2e-tests success/skipped: ${{ needs.e2e-tests.result == 'success' || needs.e2e-tests.result == 'skipped' }}"
-                  echo ""
-                  echo "Note: e2e-tests skips on develop branch by design"
-                  echo ""
-
             - uses: actions/checkout@v4
 
             - name: Mock Merge develop to main
