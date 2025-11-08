@@ -284,9 +284,8 @@ jobs:
             github.actor != 'dependabot[bot]' &&
             needs.build-and-upload-lambda.result == 'success' &&
             needs.detect-changes.outputs.has_code_changes == 'true' &&
-            (needs.ensure-infrastructure.result == 'success' || 
-             needs.ensure-infrastructure.result == 'skipped' ||
-             needs.check-infrastructure.outputs.infrastructure_exists == 'true')
+            needs.ensure-infrastructure.result != 'failure' &&
+            needs.check-infrastructure.result != 'failure'
         steps:
             - name: Mock Deploy Lambda Functions
               id: deploy
