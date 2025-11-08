@@ -199,12 +199,13 @@ jobs:
             s3_version: ${{ steps.upload.outputs.s3_version }}
             artifact_name: ${{ steps.build.outputs.artifact_name }}
         if: >-
-            github.actor == 'dependabot[bot]' ||
-            (needs.determine-environment.outputs.should_deploy == 'true' &&
-             (needs.detect-changes.outputs.has_code_changes == 'true' ||
-              needs.check-infrastructure.outputs.infrastructure_exists == 'false') &&
-             (needs.deploy-s3-bucket.result == 'success' || needs.deploy-s3-bucket.result == 'skipped' || 
-              needs.check-infrastructure.outputs.infrastructure_exists == 'true'))
+            always() &&
+            (github.actor == 'dependabot[bot]' ||
+             (needs.determine-environment.outputs.should_deploy == 'true' &&
+              needs.detect-changes.outputs.has_code_changes == 'true' &&
+              needs.deploy-s3-bucket.result != 'failure' &&
+              needs.check-infrastructure.result != 'failure'))
+
         steps:
             - uses: actions/checkout@v4
 
@@ -283,9 +284,8 @@ jobs:
             github.actor != 'dependabot[bot]' &&
             needs.build-and-upload-lambda.result == 'success' &&
             needs.detect-changes.outputs.has_code_changes == 'true' &&
-            (needs.ensure-infrastructure.result == 'success' || 
-             needs.ensure-infrastructure.result == 'skipped' ||
-             needs.check-infrastructure.outputs.infrastructure_exists == 'true')
+            needs.ensure-infrastructure.result != 'failure' &&
+            needs.check-infrastructure.result != 'failure'
         steps:
             - name: Mock Deploy Lambda Functions
               id: deploy
