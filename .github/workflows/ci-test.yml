@@ -328,51 +328,6 @@ jobs:
                   echo "Workspace: ${{ needs.determine-environment.outputs.workspace }}"
                   echo "✅ E2E tests simulated"
 
-    promote-to-live:
-        name: Auto-promote to Live
-        runs-on: ubuntu-latest
-        needs:
-            [deploy-s3-bucket, ensure-infrastructure, deploy-lambda, e2e-tests]
-        if: >-
-            always() &&
-            github.ref == 'refs/heads/develop' && 
-            needs.deploy-s3-bucket.result != 'failure' &&
-            needs.ensure-infrastructure.result != 'failure' &&
-            needs.deploy-lambda.result != 'failure' &&
-            needs.e2e-tests.result != 'failure'
-        steps:
-            - name: Debug promotion conditions
-              run: |
-                  echo "=== Promotion Debug Info ==="
-                  echo "Branch: ${{ github.ref }}"
-                  echo "Branch name: ${{ github.ref_name }}"
-                  echo "Is develop branch: ${{ github.ref == 'refs/heads/develop' }}"
-                  echo ""
-                  echo "=== Critical Jobs Status ==="
-                  echo "deploy-s3-bucket: ${{ needs.deploy-s3-bucket.result }}"
-                  echo "ensure-infrastructure: ${{ needs.ensure-infrastructure.result }}"
-                  echo "deploy-lambda: ${{ needs.deploy-lambda.result }}"
-                  echo "e2e-tests: ${{ needs.e2e-tests.result }}"
-                  echo ""
-                  echo "=== Condition Evaluation ==="
-                  echo "always(): true (always evaluates to true)"
-                  echo "github.ref == 'refs/heads/develop': ${{ github.ref == 'refs/heads/develop' }}"
-                  echo "deploy-s3-bucket success/skipped: ${{ needs.deploy-s3-bucket.result == 'success' || needs.deploy-s3-bucket.result == 'skipped' }}"
-                  echo "ensure-infrastructure success/skipped: ${{ needs.ensure-infrastructure.result == 'success' || needs.ensure-infrastructure.result == 'skipped' }}"
-                  echo "deploy-lambda success/skipped: ${{ needs.deploy-lambda.result == 'success' || needs.deploy-lambda.result == 'skipped' }}"
-                  echo "e2e-tests success/skipped: ${{ needs.e2e-tests.result == 'success' || needs.e2e-tests.result == 'skipped' }}"
-                  echo ""
-                  echo "Note: e2e-tests skips on develop branch by design"
-                  echo ""
-
-            - uses: actions/checkout@v4
-
-            - name: Mock Merge develop to main
-              run: |
-                  echo "=== Mock Auto-promotion ==="
-                  echo "Would merge develop → main"
-                  echo "✅ Auto-promotion simulated"
-
     ci-status:
         name: CI Status & Deployment Summary
         runs-on: ubuntu-latest
@@ -386,7 +341,6 @@ jobs:
                 ensure-infrastructure,
                 deploy-lambda,
                 e2e-tests,
-                promote-to-live,
             ]
         if: always()
         steps:
@@ -454,22 +408,51 @@ jobs:
                   fi
 
                   echo ""
-                  echo "=== Auto-promotion Status ==="
-                  if [[ "${{ needs.promote-to-live.result }}" == "success" ]]; then
-                      echo "✅ Auto-promotion to live completed successfully"
-                  elif [[ "${{ needs.promote-to-live.result }}" == "failure" ]]; then
-                      echo "❌ Auto-promotion to live failed"
-                  elif [[ "${{ needs.promote-to-live.result }}" == "skipped" ]]; then
-                      echo "⏭️  Auto-promotion to live skipped"
-                      if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
-                          echo "💡 Promotion skipped reasons (develop branch):"
-                          echo "   - deploy-s3-bucket: ${{ needs.deploy-s3-bucket.result }}"
-                          echo "   - ensure-infrastructure: ${{ needs.ensure-infrastructure.result }}"
-                          echo "   - deploy-lambda: ${{ needs.deploy-lambda.result }}"
-                      else
-                          echo "💡 Not on develop branch"
-                      fi
-                  fi
-
-                  echo ""
                   echo "View full logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+    promote-to-live:
+        name: Auto-promote to Live
+        runs-on: ubuntu-latest
+        needs:
+            [
+                deploy-s3-bucket,
+                ensure-infrastructure,
+                deploy-lambda,
+                e2e-tests,
+                ci-status,
+            ]
+        if: >-
+            always() &&
+            github.ref == 'refs/heads/develop'
+        steps:
+            - name: Debug promotion conditions
+              run: |
+                  echo "=== Promotion Debug Info ==="
+                  echo "Branch: ${{ github.ref }}"
+                  echo "Branch name: ${{ github.ref_name }}"
+                  echo "Is develop branch: ${{ github.ref == 'refs/heads/develop' }}"
+                  echo ""
+                  echo "=== Critical Jobs Status ==="
+                  echo "deploy-s3-bucket: ${{ needs.deploy-s3-bucket.result }}"
+                  echo "ensure-infrastructure: ${{ needs.ensure-infrastructure.result }}"
+                  echo "deploy-lambda: ${{ needs.deploy-lambda.result }}"
+                  echo "e2e-tests: ${{ needs.e2e-tests.result }}"
+                  echo ""
+                  echo "=== Condition Evaluation ==="
+                  echo "always(): true (always evaluates to true)"
+                  echo "github.ref == 'refs/heads/develop': ${{ github.ref == 'refs/heads/develop' }}"
+                  echo "deploy-s3-bucket success/skipped: ${{ needs.deploy-s3-bucket.result == 'success' || needs.deploy-s3-bucket.result == 'skipped' }}"
+                  echo "ensure-infrastructure success/skipped: ${{ needs.ensure-infrastructure.result == 'success' || needs.ensure-infrastructure.result == 'skipped' }}"
+                  echo "deploy-lambda success/skipped: ${{ needs.deploy-lambda.result == 'success' || needs.deploy-lambda.result == 'skipped' }}"
+                  echo "e2e-tests success/skipped: ${{ needs.e2e-tests.result == 'success' || needs.e2e-tests.result == 'skipped' }}"
+                  echo ""
+                  echo "Note: e2e-tests skips on develop branch by design"
+                  echo ""
+
+            - uses: actions/checkout@v4
+
+            - name: Mock Merge develop to main
+              run: |
+                  echo "=== Mock Auto-promotion ==="
+                  echo "Would merge develop → main"
+                  echo "✅ Auto-promotion simulated"
